@@ -1,0 +1,26 @@
+UPnP Protocol notes
+control points are clients that connect to the network, they search for devices broadcasting with the HTTP M-SEARCH to the reserved address 239.255.255.250:1900
+a search message, and the devices that match the criteria respond with a unicast message.
+
+<service>
+	<serviceType>urn:schemas-upnp-org:service:Layer3Forwarding:1</serviceType>
+	<serviceId>urn:upnp-org:serviceId:L3Forwarding1</serviceId>
+	<SCPDURL>/Layer3Forwarding.xml</SCPDURL>
+	<controlURL>/Layer3Forwarding</controlURL>
+	<eventSubURL>/Layer3Forwarding</eventSubURL>
+</service>
+
+Internet Gateway Device Protocol
+miniupnp
+
+Steps:
+	Send a m-search broadcast and identify the devices available.
+	the devices respond with a unicast on which they specify the url location of the devices xml
+	the xml contains the services, virtual devices, etc that devices has, services have a control url to post SOAP requests to and an xml url that describes the variables required
+	make a soap protocol over http request matching the criteria specified in the service xml.
+M_SEACH format:
+	M-SEARCH * HTTP/1.1
+	HOST:    239.255.255.250:1900    
+	MAN:    "ssdp:discover" Required by HTTP Extension Framework. 
+	MX:    seconds to delay response    
+	ST: search target (upnp:rootdevice)
