@@ -3,12 +3,13 @@ from library_upnp import *
 import sys
 import requests
 from xml.dom import minidom
+from xml.etree import ElementTree as ET
 
 def main():
     global urlBase
-    udpsocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    # location = SSDP.GetLocation(udpsocket=udpsocket)
-    # location = "http://192.168.1.170:55003/description.xml"
+    #udpsocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    #location = SSDP.GetLocation(udpsocket=udpsocket)
+    #location = "http://192.168.1.170:55003/description.xml"
     location = "http://192.168.1.1:80/RootDevice.xml"
     print("XML Location:", location)
     request = HTTP.GET(location)
@@ -25,40 +26,31 @@ def main():
     urlBase = SCPD.GetUrlBase(xml)
     if urlBase == None:
         urlBase = location
-    services = SCPD.GetServices(xml)
-    if services:
-        for i in range(len(services)):
-            print(i, services[i].ToString())
+
+    servicesList = SCPD.GetServices(xml)
+    if servicesList:
+        selectedService = SelectService(servicesList)
     else:
         print("Services NULL")
         sys.exit()
-    selected = int(input("select a service: "))  # implement try except
-    selectedservice = services[selected]
-    actionNodesList = SCPD.GetActionNodesList(selectedservice)
-    actionsObjList = list()
-    if actionNodesList:
-        for node in actionNodesList: #gets all the actions objects in a list
-            action = Action.GetAction(node)
-            actionsObjList.append(action) 
-        for i in range(len(actionsObjList)): #displays them to the screen
-            if actionsObjList[i].arguments:
-                inArgs = list()
-                for arg in actionsObjList[i].arguments:#.keys()| for loop iterates through keys of a dict
-                    if arg.direction == "in":
-                        inArgs.append(arg)
-                print("[{0}] {1} ({2})".format(i, actionsObjList[i].name, len(inArgs)))
-            else:
-                print("[{0}] {1} (0)".format(i, actionsObjList[i].name))
 
-        selected = int(input("select an action: "))
-        action = actionsObjList[selected]
-        for arg in actionsObjList[selected].arguments: #populates the in arguments
-            if arg.direction == "in":
-                value = input(arg.ToString() + ": ")
-                actionsObjList[selected].arguments.update({arg:value})
-                
-        request = HTTP.POST(service=selectedservice, action=action, body="") # finish
-        print(request.text)
+    selectedAction = SelectAction(selectedService) 
+    for arg in selectedAction.inArgs:  # populates the in arguments 
+        value=input(arg.ToString() + ": ") #create method and implement argument types
+        selectedAction.arguments.update({arg: value})
+
+        url=urlBase + selectedService.ctrlURL
+        soapaction = "\"{0}#{1}\"".format(selectedService.seviceType,selectedAction.name)
+        body = GenXMLbody(selectedService,selectedAction)
+        #body = dom.toxml()
+        headers={'HOST': urlBase, 'CONTENT-TYPE': 'text/xml; charset=\"utf-8\"',"CONNECTION":"close", 'SOAPACTION': soapaction}
+
+        s = requests.Session()
+        s.headers = headers
+        s.verify = False #without this we get a connection reset error
+        r =s.post(url, data=body)
+        #print(dom.toprettyxml())
+        print(r.text)
     else:
         print("Actions NULL")
 
