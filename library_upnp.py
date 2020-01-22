@@ -1,6 +1,7 @@
 import requests
 import socket
 from xml.dom import minidom
+from xml.etree import ElementTree as ET
 import sys
 import upnp_practice
 
@@ -39,19 +40,19 @@ class Argument(object):
                 argumentList.append(Argument(name,direction,relatedStateVariable))
         return argumentList
 
-    def __init__(self, name, direction, relatedStateVariable):
-        self.name = name
-        self.direction = direction
-        self.relatedStateVariable = relatedStateVariable
-
 class Action(object):    
     def __init__(self,name, arguments):
         self.name = name
         argsdict = dict()
+        inargslist = list()
         if arguments:
             for arg in arguments:
                 argsdict.update({arg : ""})
         self.arguments = argsdict
+        for arg in self.arguments:
+                if arg.direction == "in":
+                    inargslist.append(arg)
+        self.inArgs = inargslist
     def ToString(self):
         argumentStringList = list()
         if self.arguments:
@@ -80,7 +81,8 @@ class Action(object):
         return action
 
 class Service(object):
-    def __init__(self, servicename, ctrlURL, scpdURL, parentDevice): #add actions as a property of services
+    def __init__(self, servicename, serviceType, ctrlURL, scpdURL, parentDevice): #add actions as a property of services
+        self.seviceType = serviceType
         self.servicename = servicename
         self.ctrlURL = ctrlURL
         self.scpdURL = scpdURL
@@ -92,14 +94,6 @@ class Service(object):
 class HTTP():
 
     global urlBase
-    @staticmethod
-    def POST(body="",service = Service,action = Action):
-        body  ="<?xml version=\"1.0\"?><s:Envelopexmlns:s=\"http://schemas.xmlsoap.org/soap/envelope\"s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body><u:actionName xmlns:u={0}/></s:Body></s:Envelope>".format(service.parentDevice)
-        
-        soapaction = "{0}:{1}".format(service.parentDevice,action.name)
-        headers = {'HOST':urlBase+service.ctrlURL,'CONTENT-LENGHT':str(len(bytes(body,"utf8"))),'CONTENT-TYPE':'text/xml; charset=\"utf-8\"','SOAPACTION':soapaction}
-        r = requests.post(urlBase+service.ctrlURL,data=body,headers=headers)
-        return r
     @staticmethod
     def GET(url):
         """
@@ -117,6 +111,9 @@ class HTTP():
                 print("Request Timed Out")
             except  requests.ConnectionError as e:
                 print("Connection Error\n",str(e))
+            except KeyboardInterrupt:
+                print("CTRL-C quitting...")
+                sys.exit()
             except Exception as e:
                 print("UNHANDLED EXCEPTION!!\n",e)
                 sys.exit()
@@ -173,6 +170,9 @@ class SSDP():  # Simple Service Discovery Protocol
                 break
             except socket.timeout: #make sure to call .timeout from the package name and not a variable with the same name. Do not name variables the same as packages.
                 print("Connection Timeout Error")
+            except KeyboardInterrupt:
+                print("\nCTRL-C quitting...")
+                sys.exit()
             if i == 2:
                 print("byebye")
                 sys.exit()
@@ -215,7 +215,9 @@ class SCPD():  # Service Control Point Definition
                 scpdURL = node.getElementsByTagName("SCPDURL")
                 scpdURL = XMLGetNodeText(scpdURL)
                 parentDevice = node.parentNode.parentNode.getElementsByTagName("deviceType")[0].firstChild.data
-                service = Service(name, ctrlURL, scpdURL,parentDevice)
+                serviceType = node.getElementsByTagName("serviceType")
+                serviceType = XMLGetNodeText(serviceType)
+                service = Service(name,serviceType, ctrlURL, scpdURL,parentDevice)
                 services.append(service)
             return services
         else:
@@ -242,3 +244,61 @@ class SCPD():  # Service Control Point Definition
             return actionNodesList
         else:
             return None
+
+def GenXMLbody(service=Service, action=Action):
+            #soapaction="{0}:{1}".format(service.parentDevice, action.name)
+            xmlroot = ET.Element("s:Envelope",{"xmlns:s": "http://schemas.xmlsoap.org/soap/envelope/", "s:encodingStyle": "http://schemas.xmlsoap.org/soap/encoding/"})
+            body = ET.SubElement(xmlroot, "s:Body")
+            actionnode = ET.SubElement(body,"u:"+action.name,{"xmlns:u":service.seviceType})
+            if action.inArgs:
+                for arg in action.inArgs:
+                    argumentnode = ET.SubElement(actionnode,arg.name)
+                    argumentnode.text = action.arguments[arg]
+                # <?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope\"s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body> <u:actionName xmlns:u={0}/></s:Body></s:Envelope>"
+            #dom = minidom.parseString(ET.tostring(xmlroot))
+            return ET.tostring(xmlroot,"utf8")
+            #return dom
+
+def SelectAction(service = Service):
+    """
+    Displays the available actions for the service, returns the one selected by the user
+    """
+    actionNodesList = SCPD.GetActionNodesList(service)
+    actionsList = list()
+    if actionNodesList:
+        for node in actionNodesList:  # gets all the actions objects in a list
+            action = Action.GetAction(node)
+            actionsList.append(action)
+
+        for i in range(len(actionsList)):  # displays them to the screen
+            if actionsList[i].arguments:
+                print("[{0}] {1} (out {2}) (in {3})".format(i, actionsList[i].name, str(len(actionsList[i].arguments) - len(actionsList[i].inArgs)), len(actionsList[i].inArgs)))
+            else:
+                print("[{0}] {1} (0)".format(i, actionsList[i].name))
+        while True:
+            try:
+                selected=int(input("select an action: 0-%s" % (len(actionsList))))
+                selectedAction=actionsList[selected]
+                return selectedAction
+            except TypeError:
+                print("wrong type input")
+                pass
+            except IndexError:
+                print("input out of range")
+                pass
+
+def SelectService(servicesList):
+    for i in range(len(servicesList)):
+            print(i, servicesList[i].ToString())
+
+    try:
+        selected=int(input("select a service: 0-%s" % (len(servicesList))))
+        selected = servicesList[selected] 
+        return selected
+    except TypeError:
+        print("wrong type input")
+        pass
+    except IndexError:
+        print("input out of range")
+        pass
+        
